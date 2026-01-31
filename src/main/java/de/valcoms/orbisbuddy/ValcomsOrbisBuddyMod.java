@@ -9,6 +9,10 @@ import de.valcoms.orbisbuddy.registry.CommandRegistry;
 import de.valcoms.orbisbuddy.registry.EntityRegistry;
 import de.valcoms.orbisbuddy.registry.EventRegistry;
 import de.valcoms.orbisbuddy.registry.ItemRegistry;
+import de.valcoms.orbisbuddy.service.DefaultGolemRuntimeAdapter;
+import de.valcoms.orbisbuddy.service.GolemInstanceStore;
+import de.valcoms.orbisbuddy.service.GolemService;
+import de.valcoms.orbisbuddy.service.InventoryService;
 
 import javax.annotation.Nonnull;
 import java.util.logging.Level;
@@ -35,15 +39,22 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
 
     @Override
     protected void setup() {
+        LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Plugin loaded");
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Setting up...");
-        var config = new ConfigService().loadOrCreate(null);
+        Object worldRef = null;
+        var config = new ConfigService().loadOrCreate(worldRef);
         var repo = new JsonGolemSaveRepository();
+        var store = new GolemInstanceStore();
+        var inventory = new InventoryService();
+        var runtime = new DefaultGolemRuntimeAdapter(store);
+        var golemService = new GolemService(worldRef, repo, runtime, inventory);
 
-        CommandRegistry.register();
         ItemRegistry.register();
-        EntityRegistry.register();
+        EntityRegistry.register(this);
+        CommandRegistry.register(this, golemService, store, runtime);
+        LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Registered commands: golem, obdebug");
         EventRegistry.register();
-
+        // TODO(engine): expose services if needed for other engine hooks
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Setup complete!");
     }
 
