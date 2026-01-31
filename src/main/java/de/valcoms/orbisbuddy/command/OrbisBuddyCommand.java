@@ -50,7 +50,13 @@ public class OrbisBuddyCommand extends AbstractCommand {
             case "passive" -> service.setCombatMode(ownerId, CombatMode.PASSIVE);
             case "activate" -> {
                 boolean initial = service.isOffline(ownerId);
-                service.tryActivate(playerRef, ownerId, initial);
+                boolean activated = service.tryActivate(playerRef, ownerId, initial);
+                if (activated) {
+                    context.sendMessage(Message.raw("OrbisBuddy aktiviert."));
+                } else {
+                    String requirement = initial ? "EnergyCore" : "Lost Core";
+                    context.sendMessage(Message.raw("Aktivierung fehlgeschlagen – du brauchst einen " + requirement + "."));
+                }
             }
             default -> context.sendMessage(Message.raw("Usage: /golem status|follow|stay|assist|passive|activate"));
         }

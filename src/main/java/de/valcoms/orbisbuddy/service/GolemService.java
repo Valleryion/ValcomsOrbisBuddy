@@ -1,17 +1,25 @@
 package de.valcoms.orbisbuddy.service;
 
 import de.valcoms.orbisbuddy.ids.OrbisBuddyIds;
+import de.valcoms.orbisbuddy.model.ActivationResult;
 import de.valcoms.orbisbuddy.model.CombatMode;
 import de.valcoms.orbisbuddy.model.FollowMode;
 import de.valcoms.orbisbuddy.model.GolemData;
 import de.valcoms.orbisbuddy.model.GolemState;
 import de.valcoms.orbisbuddy.persistence.GolemSaveRepository;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 public class GolemService {
+
     private final Object worldRef;
-    public final GolemSaveRepository repo;
-    public final GolemRuntimeAdapter runtime;
-    public final InventoryService inventory;
+    private final GolemSaveRepository repo;
+    private final GolemRuntimeAdapter runtime;
+    private final InventoryService inventory;
+    private final Map<String, Integer> debugEnergyCores = new ConcurrentHashMap<>();
 
     public GolemService(
             Object worldRef,
@@ -20,9 +28,9 @@ public class GolemService {
             InventoryService inventory
     ) {
         this.worldRef = worldRef;
-        this.repo = repo;
-        this.runtime = runtime;
-        this.inventory = inventory;
+        this.repo = Objects.requireNonNull(repo);
+        this.runtime = Objects.requireNonNull(runtime);
+        this.inventory = Objects.requireNonNull(inventory);
     }
 
     public GolemData loadOrCreate(String ownerId) {
@@ -57,15 +65,41 @@ public class GolemService {
         runtime.applyState(ownerId, data);
     }
 
+    public ActivationResult tryActivateWithEnergyCore(Object playerRef, String ownerId) {
+        var data = loadOrCreate(ownerId);
+        if (data.getState() != GolemState.OFFLINE) {
+            return ActivationResult.ALREADY_ACTIVE;
+        }
+
+        if (!inventory.hasEnergyCore(playerRef) && !hasDebugEnergyCore(ownerId)) {
+            return ActivationResult.NEEDS_CORE;
+        }
+
+        boolean activated = tryActivate(playerRef, ownerId, true);
+        if (!activated) {
+            return ActivationResult.CONSUME_FAILED;
+        }
+        return ActivationResult.SUCCESS;
+    }
+
     public boolean tryActivate(Object playerRef, String ownerId, boolean initialActivation) {
         var data = loadOrCreate(ownerId);
 
-        String required = initialActivation ? OrbisBuddyIds.ITEM_ENERGY_CORE : OrbisBuddyIds.ITEM_LOST_CORE;
-
-        if (!inventory.hasItem(playerRef, required, 1)) {
+        String required = initialActivation
+                ? OrbisBuddyIds.ITEM_ENERGY_CORE
+                : OrbisBuddyIds.ITEM_LOST_CORE;
+        boolean hasRequired = inventory.hasItem(playerRef, required, 1)
+                || (initialActivation && hasDebugEnergyCore(ownerId));
+        if (!hasRequired) {
             return false;
         }
-        if (!inventory.consumeItem(playerRef, required, 1)) {
+        boolean consumed;
+        if (initialActivation) {
+            consumed = consumeEnergyCore(playerRef, ownerId);
+        } else {
+            consumed = inventory.consumeItem(playerRef, required, 1);
+        }
+        if (!consumed) {
             return false;
         }
 
@@ -79,4 +113,31 @@ public class GolemService {
         return loadOrCreate(ownerId).getState() == GolemState.OFFLINE;
     }
 
+    public void grantDebugEnergyCore(String ownerId, int count) {
+        debugEnergyCores.merge(ownerId, count, Integer::sum);
+    }
+
+    private boolean hasDebugEnergyCore(String ownerId) {
+        return debugEnergyCores.getOrDefault(ownerId, 0) > 0;
+    }
+
+    private boolean consumeEnergyCore(Object playerRef, String ownerId) {
+        if (inventory.consumeEnergyCore(playerRef, 1)) {
+            return true;
+        }
+        return consumeDebugEnergyCore(ownerId, 1);
+    }
+
+    private boolean consumeDebugEnergyCore(String ownerId, int count) {
+        AtomicBoolean success = new AtomicBoolean(false);
+        debugEnergyCores.compute(ownerId, (key, value) -> {
+            if (value == null || value < count) {
+                return value;
+            }
+            success.set(true);
+            int remaining = value - count;
+            return remaining <= 0 ? null : remaining;
+        });
+        return success.get();
+    }
 }

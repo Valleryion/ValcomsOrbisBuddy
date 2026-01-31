@@ -6,6 +6,8 @@ import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.AbstractCommand;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
+import com.hypixel.hytale.server.core.entity.Entity;
+import com.hypixel.hytale.server.core.entity.EntityUtils;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -56,13 +58,28 @@ public class DebugCommand extends AbstractCommand {
         }
 
         String sub = args[0].toLowerCase();
+        if ("givecore".equals(sub)) {
+            String ownerId = resolveOwnerId(context);
+            golemService.grantDebugEnergyCore(ownerId, 1);
+            context.sendMessage(Message.raw("Debug EnergyCore gewährt. Nächste Aktivierung verbraucht ihn."));
+            return CompletableFuture.completedFuture(null);
+        }
+
         if ("summon".equals(sub)) {
             context.sendMessage(Message.raw("Spawning Bear_Grizzly (vanilla NPC)..."));
             Ref<EntityStore> playerRef = context.senderAsPlayerRef();
-            Ref<EntityStore> spawnedRef = spawnNpcNearPlayer(playerRef, "Bear_Grizzly");
-            if (spawnedRef == null) {
+            String ownerId = resolveOwnerId(context);
+            SpawnedNpc spawned = spawnNpcNearPlayer(playerRef, "Bear_Grizzly");
+            if (spawned == null) {
                 context.sendMessage(Message.raw("Failed to spawn Bear_Grizzly."));
             } else {
+                Entity entity = spawned.entity();
+                OrbisBuddyController controller = new OrbisBuddyController(entity);
+                store.setEntity(ownerId, entity);
+                store.setController(ownerId, controller);
+
+                GolemData data = golemService.loadOrCreate(ownerId);
+                runtime.applyState(ownerId, data);
                 context.sendMessage(Message.raw("Spawned Bear_Grizzly."));
             }
             return CompletableFuture.completedFuture(null);
@@ -100,14 +117,14 @@ public class DebugCommand extends AbstractCommand {
         return context.sender().getDisplayName();
     }
 
-    private Ref<EntityStore> spawnNpcNearPlayer(Ref<EntityStore> playerRef, String npcType) {
+    private SpawnedNpc spawnNpcNearPlayer(Ref<EntityStore> playerRef, String npcType) {
         if (playerRef == null || !playerRef.isValid()) {
             return null;
         }
 
         EntityStore entityStore = playerRef.getStore().getExternalData();
         World world = entityStore.getWorld();
-        CompletableFuture<Ref<EntityStore>> future = new CompletableFuture<>();
+        CompletableFuture<SpawnedNpc> future = new CompletableFuture<>();
 
         world.execute(() -> {
             try {
@@ -130,7 +147,8 @@ public class DebugCommand extends AbstractCommand {
 
                 @SuppressWarnings("unchecked")
                 Ref<EntityStore> spawnedRef = (Ref<EntityStore>) result.getClass().getMethod("first").invoke(result);
-                future.complete(spawnedRef);
+                Entity entity = EntityUtils.getEntity(spawnedRef, entityStore.getStore());
+                future.complete(new SpawnedNpc(spawnedRef, entity));
             } catch (Throwable throwable) {
                 future.completeExceptionally(throwable);
             }
@@ -145,6 +163,8 @@ public class DebugCommand extends AbstractCommand {
             return null;
         }
     }
+
+    private record SpawnedNpc(Ref<EntityStore> ref, Entity entity) {}
 
     private OrbisBuddyEntity spawnBuddyNearPlayer(Ref<EntityStore> playerRef) {
         if (playerRef == null || !playerRef.isValid()) {

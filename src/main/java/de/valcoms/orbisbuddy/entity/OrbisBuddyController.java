@@ -1,18 +1,24 @@
 package de.valcoms.orbisbuddy.entity;
 
+import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.server.core.entity.Entity;
 import de.valcoms.orbisbuddy.model.CombatMode;
 import de.valcoms.orbisbuddy.model.FollowMode;
 import de.valcoms.orbisbuddy.model.GolemData;
 import de.valcoms.orbisbuddy.model.GolemState;
 
 public class OrbisBuddyController {
-    private final OrbisBuddyEntity entity;
 
-    public OrbisBuddyController(OrbisBuddyEntity entity) {
+    private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
+
+    private final Entity entity;
+
+    public OrbisBuddyController(Entity entity) {
         this.entity = entity;
     }
 
     public void applyState(GolemData data) {
+        LOGGER.atInfo().log("[ValcomsOrbisBuddy] applyState owner=" + data.getOwnerId() + " state=" + data.getState());
         if (data.getState() == GolemState.OFFLINE) {
             setAiEnabled(false);
             setMovementEnabled(false);
@@ -25,8 +31,8 @@ public class OrbisBuddyController {
         setMovementEnabled(true);
         setCombatEnabled(true);
 
-        FollowMode followMode = data.getSettings().getFollowMode();
-        CombatMode combatMode = data.getSettings().getCombatMode();
+        FollowMode follow = data.getSettings().getFollowMode();
+        CombatMode combat = data.getSettings().getCombatMode();
 
         // TODO: follow controller enable/disable
         // TODO: combat controller enable/disable

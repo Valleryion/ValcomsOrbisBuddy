@@ -53,7 +53,8 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
         EntityRegistry.register(this);
         CommandRegistry.register(this, golemService, store, runtime);
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Registered commands: golem, obdebug");
-        EventRegistry.register();
+        EventRegistry.register(getEventRegistry(), golemService, store);
+
         // TODO(engine): expose services if needed for other engine hooks
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Setup complete!");
     }
