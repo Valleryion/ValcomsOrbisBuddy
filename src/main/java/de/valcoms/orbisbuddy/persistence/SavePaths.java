@@ -2,10 +2,10 @@ package de.valcoms.orbisbuddy.persistence;
 
 import java.nio.file.Path;
 
-public class SavePaths {
-    private SavePaths() {};
+public final class SavePaths {
+    private SavePaths() {}
 
-    public static Path golemDataFile(Path worldRoot) {
-        return worldRoot.resolve("orbisbuddy").resolve("golem_state.json");
+    public static Path golemDataFile(Path dataDir) {
+        return dataDir.resolve("golems.json");
     }
 }

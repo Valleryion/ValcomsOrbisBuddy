@@ -32,11 +32,29 @@ public class GolemInstanceStore {
     }
 
     public void clear(String ownerId) {
+        removeByOwner(ownerId);
+    }
+
+    public void removeByOwner(String ownerId) {
+        if (ownerId == null) {
+            return;
+        }
         Object previous = ownerToEntity.remove(ownerId);
         if (previous != null) {
             entityToOwner.remove(previous);
         }
         ownerToController.remove(ownerId);
+    }
+
+    public void removeByEntity(Object entityRef) {
+        if (entityRef == null) {
+            return;
+        }
+        String ownerId = entityToOwner.remove(entityRef);
+        if (ownerId != null) {
+            ownerToEntity.remove(ownerId, entityRef);
+            ownerToController.remove(ownerId);
+        }
     }
 
     public String findOwnerIdByEntity(Object entityRef) {

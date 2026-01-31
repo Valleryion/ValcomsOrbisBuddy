@@ -13,7 +13,7 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 import de.valcoms.orbisbuddy.entity.OrbisBuddyController;
-import de.valcoms.orbisbuddy.entity.OrbisBuddyEntity;
+import de.valcoms.orbisbuddy.ids.OrbisBuddyIds;
 import de.valcoms.orbisbuddy.model.GolemData;
 import de.valcoms.orbisbuddy.service.GolemInstanceStore;
 import de.valcoms.orbisbuddy.service.GolemRuntimeAdapter;
@@ -48,12 +48,17 @@ public class DebugCommand extends AbstractCommand {
     protected CompletableFuture<Void> execute(@Nonnull CommandContext context) {
         String[] args = parseArgs(context.getInputString());
         if (args.length == 0) {
-            context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy"));
+            context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy | givecore"));
             return CompletableFuture.completedFuture(null);
         }
 
         if (!context.isPlayer()) {
-            context.sendMessage(Message.raw("Only players can use /obdebug summon"));
+            context.sendMessage(Message.raw("Only players can use /obdebug."));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if (!golemService.isDebugEnabled()) {
+            context.sendMessage(Message.raw("Debug-Kommandos sind deaktiviert."));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -69,43 +74,53 @@ public class DebugCommand extends AbstractCommand {
             context.sendMessage(Message.raw("Spawning Bear_Grizzly (vanilla NPC)..."));
             Ref<EntityStore> playerRef = context.senderAsPlayerRef();
             String ownerId = resolveOwnerId(context);
+
             SpawnedNpc spawned = spawnNpcNearPlayer(playerRef, "Bear_Grizzly");
             if (spawned == null) {
                 context.sendMessage(Message.raw("Failed to spawn Bear_Grizzly."));
-            } else {
-                Entity entity = spawned.entity();
-                OrbisBuddyController controller = new OrbisBuddyController(entity);
-                store.setEntity(ownerId, entity);
-                store.setController(ownerId, controller);
-
-                GolemData data = golemService.loadOrCreate(ownerId);
-                runtime.applyState(ownerId, data);
-                context.sendMessage(Message.raw("Spawned Bear_Grizzly."));
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-
-        if ("summonbuddy".equals(sub)) {
-            context.sendMessage(Message.raw("Spawning OrbisBuddy (custom entity)..."));
-            Ref<EntityStore> playerRef = context.senderAsPlayerRef();
-            String ownerId = resolveOwnerId(context);
-            OrbisBuddyEntity entity = spawnBuddyNearPlayer(playerRef);
-            if (entity == null) {
-                context.sendMessage(Message.raw("Failed to spawn OrbisBuddy."));
                 return CompletableFuture.completedFuture(null);
             }
 
+            Entity entity = spawned.entity();
             OrbisBuddyController controller = new OrbisBuddyController(entity);
             store.setEntity(ownerId, entity);
             store.setController(ownerId, controller);
 
             GolemData data = golemService.loadOrCreate(ownerId);
             runtime.applyState(ownerId, data);
-            context.sendMessage(Message.raw("Spawned. State=" + data.getState()));
+            context.sendMessage(Message.raw("Spawned Bear_Grizzly."));
             return CompletableFuture.completedFuture(null);
         }
 
-        context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy"));
+        if ("summonbuddy".equals(sub)) {
+            context.sendMessage(Message.raw("Spawning OrbisBuddy TestDummy (NPCRole)..."));
+            Ref<EntityStore> playerRef = context.senderAsPlayerRef();
+            String ownerId = resolveOwnerId(context);
+
+            // Try plain key first, then folder-qualified key (engine-dependent).
+            SpawnedNpc spawned = spawnNpcNearPlayer(playerRef, OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY);
+            if (spawned == null) {
+                spawned = spawnNpcNearPlayer(playerRef, OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY);
+            }
+
+            if (spawned == null) {
+                context.sendMessage(Message.raw("Failed to spawn OrbisBuddy_TestDummy. Check that the asset pack is loaded and the key matches."));
+                return CompletableFuture.completedFuture(null);
+            }
+
+            Entity entity = spawned.entity();
+            OrbisBuddyController controller = new OrbisBuddyController(entity);
+            store.setEntity(ownerId, entity);
+            store.setController(ownerId, controller);
+
+            GolemData data = golemService.loadOrCreate(ownerId);
+            runtime.applyState(ownerId, data);
+
+            context.sendMessage(Message.raw("Spawned TestDummy. State=" + data.getState()));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy | givecore"));
         return CompletableFuture.completedFuture(null);
     }
 
@@ -137,8 +152,7 @@ public class DebugCommand extends AbstractCommand {
                 Vector3d position = transform.getPosition().clone().add(1.0, 0.0, 1.0);
                 Vector3f rotation = transform.getRotation();
 
-                // Spawn a vanilla NPC by its asset key (e.g. "Bear_Grizzly").
-                // We intentionally avoid depending on the Pair/INonPlayerCharacter types at compile-time.
+                // Spawn an NPC by its asset/role key (e.g. "Bear_Grizzly" or your NPCRole id).
                 Object result = NPCPlugin.get().spawnNPC(entityStore.getStore(), npcType, null, position, rotation);
                 if (result == null) {
                     future.complete(null);
@@ -147,6 +161,7 @@ public class DebugCommand extends AbstractCommand {
 
                 @SuppressWarnings("unchecked")
                 Ref<EntityStore> spawnedRef = (Ref<EntityStore>) result.getClass().getMethod("first").invoke(result);
+
                 Entity entity = EntityUtils.getEntity(spawnedRef, entityStore.getStore());
                 future.complete(new SpawnedNpc(spawnedRef, entity));
             } catch (Throwable throwable) {
@@ -166,47 +181,11 @@ public class DebugCommand extends AbstractCommand {
 
     private record SpawnedNpc(Ref<EntityStore> ref, Entity entity) {}
 
-    private OrbisBuddyEntity spawnBuddyNearPlayer(Ref<EntityStore> playerRef) {
-        if (playerRef == null || !playerRef.isValid()) {
-            return null;
-        }
-
-        EntityStore entityStore = playerRef.getStore().getExternalData();
-        World world = entityStore.getWorld();
-        CompletableFuture<OrbisBuddyEntity> future = new CompletableFuture<>();
-
-        world.execute(() -> {
-            try {
-                TransformComponent transform = entityStore.getStore().getComponent(playerRef, TransformComponent.getComponentType());
-                if (transform == null) {
-                    future.complete(null);
-                    return;
-                }
-
-                Vector3d position = transform.getPosition().clone().add(1.0, 0.0, 1.0);
-                Vector3f rotation = transform.getRotation();
-                OrbisBuddyEntity spawned = world.spawnEntity(new OrbisBuddyEntity(world), position, rotation);
-                future.complete(spawned);
-            } catch (Throwable throwable) {
-                future.completeExceptionally(throwable);
-            }
-        });
-
-        try {
-            return future.get();
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
-            return null;
-        } catch (ExecutionException executionException) {
-            return null;
-        }
-    }
-
     private String[] parseArgs(String input) {
         if (input == null || input.isBlank()) {
             return new String[0];
         }
-        String[] parts = input.trim().split("\\s+");
+        String[] parts = input.trim().split("\s+");
         if (parts.length <= 1) {
             return new String[0];
         }

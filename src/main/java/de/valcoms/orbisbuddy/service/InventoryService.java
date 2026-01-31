@@ -56,32 +56,14 @@ public class InventoryService {
             return fallback;
         }
 
+        try {
+            entityStore.getStore().assertThread();
+            return runOnWorldThread(entityRef, entityStore, action, fallback);
+        } catch (RuntimeException ignored) {
+        }
+
         CompletableFuture<T> future = new CompletableFuture<>();
-        world.execute(() -> {
-            try {
-                Entity entity = EntityUtils.getEntity(entityRef, entityStore.getStore());
-                if (!(entity instanceof LivingEntity living)) {
-                    future.complete(fallback);
-                    return;
-                }
-
-                Inventory inventory = living.getInventory();
-                if (inventory == null) {
-                    future.complete(fallback);
-                    return;
-                }
-
-                ItemContainer container = inventory.getCombinedEverything();
-                if (container == null) {
-                    future.complete(fallback);
-                    return;
-                }
-
-                future.complete(action.apply(container));
-            } catch (Throwable throwable) {
-                future.completeExceptionally(throwable);
-            }
-        });
+        world.execute(() -> future.complete(runOnWorldThread(entityRef, entityStore, action, fallback)));
 
         try {
             return future.get();
@@ -89,6 +71,34 @@ public class InventoryService {
             Thread.currentThread().interrupt();
             return fallback;
         } catch (ExecutionException executionException) {
+            return fallback;
+        }
+    }
+
+    private <T> T runOnWorldThread(
+            Ref<EntityStore> entityRef,
+            EntityStore entityStore,
+            java.util.function.Function<ItemContainer, T> action,
+            T fallback
+    ) {
+        try {
+            Entity entity = EntityUtils.getEntity(entityRef, entityStore.getStore());
+            if (!(entity instanceof LivingEntity living)) {
+                return fallback;
+            }
+
+            Inventory inventory = living.getInventory();
+            if (inventory == null) {
+                return fallback;
+            }
+
+            ItemContainer container = inventory.getCombinedEverything();
+            if (container == null) {
+                return fallback;
+            }
+
+            return action.apply(container);
+        } catch (Throwable throwable) {
             return fallback;
         }
     }

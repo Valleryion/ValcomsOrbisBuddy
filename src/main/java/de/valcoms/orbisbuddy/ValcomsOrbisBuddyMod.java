@@ -15,6 +15,8 @@ import de.valcoms.orbisbuddy.service.GolemService;
 import de.valcoms.orbisbuddy.service.InventoryService;
 
 import javax.annotation.Nonnull;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.logging.Level;
 
 /**
@@ -42,12 +44,13 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Plugin loaded");
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Setting up...");
         Object worldRef = null;
-        var config = new ConfigService().loadOrCreate(worldRef);
-        var repo = new JsonGolemSaveRepository();
+        Path dataDir = Paths.get("plugins", "ValcomsOrbisBuddy");
+        var config = new ConfigService().loadOrCreate(dataDir);
+        var repo = new JsonGolemSaveRepository(dataDir);
         var store = new GolemInstanceStore();
         var inventory = new InventoryService();
         var runtime = new DefaultGolemRuntimeAdapter(store);
-        var golemService = new GolemService(worldRef, repo, runtime, inventory);
+        var golemService = new GolemService(worldRef, repo, runtime, inventory, config.debugEnabled);
 
         ItemRegistry.register();
         EntityRegistry.register(this);

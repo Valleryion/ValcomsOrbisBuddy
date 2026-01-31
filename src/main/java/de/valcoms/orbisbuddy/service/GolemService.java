@@ -6,11 +6,16 @@ import de.valcoms.orbisbuddy.model.CombatMode;
 import de.valcoms.orbisbuddy.model.FollowMode;
 import de.valcoms.orbisbuddy.model.GolemData;
 import de.valcoms.orbisbuddy.model.GolemState;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import de.valcoms.orbisbuddy.persistence.GolemSaveRepository;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class GolemService {
@@ -19,18 +24,21 @@ public class GolemService {
     private final GolemSaveRepository repo;
     private final GolemRuntimeAdapter runtime;
     private final InventoryService inventory;
+    private final boolean debugEnabled;
     private final Map<String, Integer> debugEnergyCores = new ConcurrentHashMap<>();
 
     public GolemService(
             Object worldRef,
             GolemSaveRepository repo,
             GolemRuntimeAdapter runtime,
-            InventoryService inventory
+            InventoryService inventory,
+            boolean debugEnabled
     ) {
         this.worldRef = worldRef;
         this.repo = Objects.requireNonNull(repo);
         this.runtime = Objects.requireNonNull(runtime);
         this.inventory = Objects.requireNonNull(inventory);
+        this.debugEnabled = debugEnabled;
     }
 
     public GolemData loadOrCreate(String ownerId) {
@@ -74,7 +82,6 @@ public class GolemService {
         if (!inventory.hasEnergyCore(playerRef) && !hasDebugEnergyCore(ownerId)) {
             return ActivationResult.NEEDS_CORE;
         }
-
         boolean activated = tryActivate(playerRef, ownerId, true);
         if (!activated) {
             return ActivationResult.CONSUME_FAILED;
@@ -84,6 +91,9 @@ public class GolemService {
 
     public boolean tryActivate(Object playerRef, String ownerId, boolean initialActivation) {
         var data = loadOrCreate(ownerId);
+        if (data.getState() == GolemState.ACTIVE) {
+            return true;
+        }
 
         String required = initialActivation
                 ? OrbisBuddyIds.ITEM_ENERGY_CORE
@@ -109,16 +119,45 @@ public class GolemService {
         return true;
     }
 
+    public boolean tryActivateThreadSafe(Object playerRef, String ownerId, boolean initialActivation) {
+        if (playerRef instanceof Ref<?> ref) {
+            @SuppressWarnings("unchecked")
+            Ref<EntityStore> entityRef = (Ref<EntityStore>) ref;
+            EntityStore entityStore = entityRef.getStore().getExternalData();
+            World world = entityStore.getWorld();
+            if (world != null) {
+                CompletableFuture<Boolean> future = new CompletableFuture<>();
+                world.execute(() -> future.complete(tryActivate(playerRef, ownerId, initialActivation)));
+                try {
+                    return future.get();
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                } catch (ExecutionException executionException) {
+                    return false;
+                }
+            }
+        }
+        return tryActivate(playerRef, ownerId, initialActivation);
+    }
+
     public boolean isOffline(String ownerId) {
         return loadOrCreate(ownerId).getState() == GolemState.OFFLINE;
     }
 
+    public boolean isDebugEnabled() {
+        return debugEnabled;
+    }
+
     public void grantDebugEnergyCore(String ownerId, int count) {
+        if (!debugEnabled) {
+            return;
+        }
         debugEnergyCores.merge(ownerId, count, Integer::sum);
     }
 
     private boolean hasDebugEnergyCore(String ownerId) {
-        return debugEnergyCores.getOrDefault(ownerId, 0) > 0;
+        return debugEnabled && debugEnergyCores.getOrDefault(ownerId, 0) > 0;
     }
 
     private boolean consumeEnergyCore(Object playerRef, String ownerId) {

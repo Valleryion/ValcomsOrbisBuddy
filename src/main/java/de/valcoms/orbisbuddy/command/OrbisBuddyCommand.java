@@ -50,7 +50,7 @@ public class OrbisBuddyCommand extends AbstractCommand {
             case "passive" -> service.setCombatMode(ownerId, CombatMode.PASSIVE);
             case "activate" -> {
                 boolean initial = service.isOffline(ownerId);
-                boolean activated = service.tryActivate(playerRef, ownerId, initial);
+                boolean activated = service.tryActivateThreadSafe(playerRef, ownerId, initial);
                 if (activated) {
                     context.sendMessage(Message.raw("OrbisBuddy aktiviert."));
                 } else {

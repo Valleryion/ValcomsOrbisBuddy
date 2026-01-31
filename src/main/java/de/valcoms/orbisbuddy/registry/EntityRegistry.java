@@ -7,7 +7,7 @@ import de.valcoms.orbisbuddy.ids.OrbisBuddyIds;
 public class EntityRegistry {
     public static void register(PluginBase plugin) {
         plugin.getEntityRegistry().registerEntity(
-                OrbisBuddyIds.ENTITY_GOLEM,
+                OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY,
                 OrbisBuddyEntity.class,
                 OrbisBuddyEntity::new,
                 OrbisBuddyEntity.CODEC
