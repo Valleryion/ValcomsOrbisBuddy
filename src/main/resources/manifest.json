@@ -4,6 +4,6 @@
   "Version": "1.0.0",
   "Description": "Hytale Mod Jam 2026 - \"Echoes of the Machine\"",
   "Authors": [{"Name": "Valcoms"}],
-  "Main": "de.valcoms.orbisbuddy.ValcomsOrbisBuddyPlugin",
+  "Main": "de.valcoms.orbisbuddy.ValcomsOrbisBuddyMod",
   "LoadOrder": "POSTWORLD"
 }
