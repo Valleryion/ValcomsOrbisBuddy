@@ -28,4 +28,16 @@ public final class OrbisBuddyIds {
      */
     public static final String NPCROLE_ORBISBUDDY_TESTDUMMY = "OrbisBuddy_TestDummy";
     public static final String NPCROLE_ORBISBUDDY_TESTDUMMY_QUALIFIED = "Undead/Skeleton/OrbisBuddy_TestDummy";
+
+    public static final String NPCROLE_ORBISBUDDY_FOLLOW_ASSIST = "OrbisBuddy_Follow_Assist";
+    public static final String NPCROLE_ORBISBUDDY_FOLLOW_PASSIVE = "OrbisBuddy_Follow_Passive";
+    public static final String NPCROLE_ORBISBUDDY_STAY_ASSIST = "OrbisBuddy_Stay_Assist";
+    public static final String NPCROLE_ORBISBUDDY_STAY_PASSIVE = "OrbisBuddy_Stay_Passive";
+    public static final String NPCROLE_ORBISBUDDY_OFFLINE = "OrbisBuddy_Offline";
+
+    public static final String NPCROLE_ORBISBUDDY_FOLLOW_ASSIST_QUALIFIED = "Undead/Skeleton/OrbisBuddy_Follow_Assist";
+    public static final String NPCROLE_ORBISBUDDY_FOLLOW_PASSIVE_QUALIFIED = "Undead/Skeleton/OrbisBuddy_Follow_Passive";
+    public static final String NPCROLE_ORBISBUDDY_STAY_ASSIST_QUALIFIED = "Undead/Skeleton/OrbisBuddy_Stay_Assist";
+    public static final String NPCROLE_ORBISBUDDY_STAY_PASSIVE_QUALIFIED = "Undead/Skeleton/OrbisBuddy_Stay_Passive";
+    public static final String NPCROLE_ORBISBUDDY_OFFLINE_QUALIFIED = "Undead/Skeleton/OrbisBuddy_Offline";
 }

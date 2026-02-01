@@ -1,1 +1,6 @@
 npcRoles.OrbisBuddy_TestDummy.name = OrbisBuddy TestDummy
+npcRoles.OrbisBuddy_Stay_Passive.nam = Buddy_Stay_Passive
+npcRoles.OrbisBuddy_Stay_Assist.name = Buddy_Stay_Assist
+npcRoles.OrbisBuddy_Follow_Assist.name = Buddy_Follow_Assist
+npcRoles.OrbisBuddy_Follow_Passive.name = Buddy_Follow_Passive
+npcRoles.OrbisBuddy_Offline.name = Buddy_Offline

@@ -16,7 +16,7 @@ public class CommandRegistry {
             GolemRuntimeAdapter runtime,
             ProximityTriggerSystem proximitySystem
     ) {
-        OrbisBuddyCommand golemCommand = new OrbisBuddyCommand(golemService);
+        OrbisBuddyCommand golemCommand = new OrbisBuddyCommand(golemService, store);
         DebugCommand debugCommand = new DebugCommand(golemService, store, runtime, proximitySystem);
 
         plugin.getCommandRegistry().registerCommand(golemCommand);

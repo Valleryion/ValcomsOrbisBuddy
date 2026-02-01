@@ -12,6 +12,7 @@ public class GolemInstanceStore {
     private final ConcurrentHashMap<Object, String> entityToOwner = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ref<EntityStore>> ownerToEntityRef = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ref<EntityStore>> ownerToPlayerRef = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> ownerToRoleKey = new ConcurrentHashMap<>();
 
     public Object getEntity(String ownerId) {
         return ownerToEntity.get(ownerId);
@@ -62,6 +63,21 @@ public class GolemInstanceStore {
         }
     }
 
+    public String getRoleKey(String ownerId) {
+        return ownerToRoleKey.get(ownerId);
+    }
+
+    public void setRoleKey(String ownerId, String roleKey) {
+        if (ownerId == null) {
+            return;
+        }
+        if (roleKey == null) {
+            ownerToRoleKey.remove(ownerId);
+        } else {
+            ownerToRoleKey.put(ownerId, roleKey);
+        }
+    }
+
     public void clear(String ownerId) {
         removeByOwner(ownerId);
     }
@@ -77,6 +93,7 @@ public class GolemInstanceStore {
         ownerToController.remove(ownerId);
         ownerToEntityRef.remove(ownerId);
         ownerToPlayerRef.remove(ownerId);
+        ownerToRoleKey.remove(ownerId);
     }
 
     public void removeByEntity(Object entityRef) {
@@ -89,6 +106,7 @@ public class GolemInstanceStore {
             ownerToController.remove(ownerId);
             ownerToEntityRef.remove(ownerId);
             ownerToPlayerRef.remove(ownerId);
+            ownerToRoleKey.remove(ownerId);
         }
     }
 
@@ -102,7 +120,6 @@ public class GolemInstanceStore {
     public boolean isBuddyEntity(Object entityRef) {
         return entityRef != null && entityToOwner.containsKey(entityRef);
     }
-
 
     /** Convenience to avoid partial binding during spawn/rebind. */
     public void bind(String ownerId, Ref<EntityStore> ref, Object entity, OrbisBuddyController controller) {

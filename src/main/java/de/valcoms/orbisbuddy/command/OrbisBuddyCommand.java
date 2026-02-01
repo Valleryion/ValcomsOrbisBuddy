@@ -7,6 +7,7 @@ import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import de.valcoms.orbisbuddy.model.CombatMode;
 import de.valcoms.orbisbuddy.model.FollowMode;
+import de.valcoms.orbisbuddy.service.GolemInstanceStore;
 import de.valcoms.orbisbuddy.service.GolemService;
 
 import javax.annotation.Nonnull;
@@ -17,10 +18,12 @@ import java.util.concurrent.CompletableFuture;
 public class OrbisBuddyCommand extends AbstractCommand {
 
     private final GolemService service;
+    private final GolemInstanceStore instanceStore;
 
-    public OrbisBuddyCommand(GolemService service) {
+    public OrbisBuddyCommand(GolemService service, GolemInstanceStore instanceStore) {
         super("golem", "OrbisBuddy controls");
         this.service = service;
+        this.instanceStore = instanceStore;
         setAllowsExtraArguments(true);
     }
 
@@ -40,6 +43,7 @@ public class OrbisBuddyCommand extends AbstractCommand {
 
         String ownerId = resolveOwnerId(context);
         Ref<EntityStore> playerRef = context.senderAsPlayerRef();
+        instanceStore.setPlayerRef(ownerId, playerRef);
         String sub = args[0].toLowerCase();
         switch (sub) {
             case "status" -> {
