@@ -34,8 +34,10 @@ public class OrbisBuddyController {
         FollowMode follow = data.getSettings().getFollowMode();
         CombatMode combat = data.getSettings().getCombatMode();
 
-        // TODO: follow controller enable/disable
-        // TODO: combat controller enable/disable
+        LOGGER.atInfo().log("[ValcomsOrbisBuddy] modes follow=" + follow + " combat=" + combat);
+
+        // TODO(engine): implement follow/stay using engine AI hooks or role-swapping strategy.
+        // TODO(engine): implement assist/passive by disabling target selection / attacks.
     }
 
     private void setAiEnabled(boolean enabled) {

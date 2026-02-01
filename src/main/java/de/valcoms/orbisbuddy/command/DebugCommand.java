@@ -12,6 +12,8 @@ import com.hypixel.hytale.server.core.modules.entity.component.TransformComponen
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
+import de.valcoms.orbisbuddy.ecs.ProximityTriggerSystem;
+import de.valcoms.orbisbuddy.ecs.ProximityTagComponent;
 import de.valcoms.orbisbuddy.entity.OrbisBuddyController;
 import de.valcoms.orbisbuddy.ids.OrbisBuddyIds;
 import de.valcoms.orbisbuddy.model.GolemData;
@@ -30,17 +32,21 @@ public class DebugCommand extends AbstractCommand {
     private final GolemService golemService;
     private final GolemInstanceStore store;
     private final GolemRuntimeAdapter runtime;
+    private final ProximityTriggerSystem proximitySystem;
 
     public DebugCommand(
             GolemService golemService,
             GolemInstanceStore store,
-            GolemRuntimeAdapter runtime
+            GolemRuntimeAdapter runtime,
+            ProximityTriggerSystem proximitySystem
     ) {
-        super("obdebug", "OrbisBuddy debug commands");
+        super("bdebug", "OrbisBuddy debug commands");
         this.golemService = golemService;
         this.store = store;
         this.runtime = runtime;
+        this.proximitySystem = proximitySystem;
         setAllowsExtraArguments(true);
+        addAliases("bd");
     }
 
     @Override
@@ -48,12 +54,12 @@ public class DebugCommand extends AbstractCommand {
     protected CompletableFuture<Void> execute(@Nonnull CommandContext context) {
         String[] args = parseArgs(context.getInputString());
         if (args.length == 0) {
-            context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy | givecore"));
+            context.sendMessage(Message.raw("Usage: /bdebug (/bd) summon | summonbuddy | givecore"));
             return CompletableFuture.completedFuture(null);
         }
 
         if (!context.isPlayer()) {
-            context.sendMessage(Message.raw("Only players can use /obdebug."));
+            context.sendMessage(Message.raw("Only players can use /bdebug (/bd)."));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -67,6 +73,14 @@ public class DebugCommand extends AbstractCommand {
             String ownerId = resolveOwnerId(context);
             golemService.grantDebugEnergyCore(ownerId, 1);
             context.sendMessage(Message.raw("Debug EnergyCore gewährt. Nächste Aktivierung verbraucht ihn."));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if ("prox".equals(sub) || "proxdebug".equals(sub)) {
+            boolean newState = !proximitySystem.isEnabled();
+            proximitySystem.setEnabled(newState);
+            context.sendMessage(Message.raw("Proximity-Debug " + (newState ? "aktiviert" : "deaktiviert")));
+            System.out.println("[ValcomsOrbisBuddy] Proximity debug set to " + newState + " by " + resolveOwnerId(context));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -100,7 +114,7 @@ public class DebugCommand extends AbstractCommand {
             // Try plain key first, then folder-qualified key (engine-dependent).
             SpawnedNpc spawned = spawnNpcNearPlayer(playerRef, OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY);
             if (spawned == null) {
-                spawned = spawnNpcNearPlayer(playerRef, OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY);
+                spawned = spawnNpcNearPlayer(playerRef, OrbisBuddyIds.NPCROLE_ORBISBUDDY_TESTDUMMY_QUALIFIED);
             }
 
             if (spawned == null) {
@@ -110,8 +124,25 @@ public class DebugCommand extends AbstractCommand {
 
             Entity entity = spawned.entity();
             OrbisBuddyController controller = new OrbisBuddyController(entity);
-            store.setEntity(ownerId, entity);
-            store.setController(ownerId, controller);
+            store.bind(ownerId, spawned.ref(), entity, controller);
+            store.setPlayerRef(ownerId, playerRef);
+
+            EntityStore entityStore = playerRef.getStore().getExternalData();
+            World world = entityStore.getWorld();
+            if (world != null) {
+                SpawnedNpc finalSpawned = spawned;
+                world.execute(() -> {
+                    try {
+                        entityStore.getStore().addComponent(finalSpawned.ref(), de.valcoms.orbisbuddy.ecs.ProximityComponents.PROXIMITY_TAG,
+                                new ProximityTagComponent(ownerId, true, 4.0f));
+                    } catch (Throwable ignored) {
+                    }
+                });
+            }
+
+            System.out.println("[ValcomsOrbisBuddy] Spawned Buddy owner=" + ownerId
+                    + " networkId=" + entity.getNetworkId()
+                    + " ref=" + spawned.ref());
 
             GolemData data = golemService.loadOrCreate(ownerId);
             runtime.applyState(ownerId, data);
@@ -120,7 +151,7 @@ public class DebugCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        context.sendMessage(Message.raw("Usage: /obdebug summon | summonbuddy | givecore"));
+        context.sendMessage(Message.raw("Usage: /bdebug (/bd) summon | summonbuddy | givecore"));
         return CompletableFuture.completedFuture(null);
     }
 

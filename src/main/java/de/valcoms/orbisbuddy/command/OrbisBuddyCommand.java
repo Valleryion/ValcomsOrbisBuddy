@@ -33,8 +33,13 @@ public class OrbisBuddyCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
+        if (!context.isPlayer()) {
+            context.sender().sendMessage(Message.raw("Nur Spieler können /golem verwenden."));
+            return CompletableFuture.completedFuture(null);
+        }
+
         String ownerId = resolveOwnerId(context);
-        Ref<EntityStore> playerRef = context.isPlayer() ? context.senderAsPlayerRef() : null;
+        Ref<EntityStore> playerRef = context.senderAsPlayerRef();
         String sub = args[0].toLowerCase();
         switch (sub) {
             case "status" -> {
@@ -52,10 +57,10 @@ public class OrbisBuddyCommand extends AbstractCommand {
                 boolean initial = service.isOffline(ownerId);
                 boolean activated = service.tryActivateThreadSafe(playerRef, ownerId, initial);
                 if (activated) {
-                    context.sendMessage(Message.raw("OrbisBuddy aktiviert."));
+                    context.sender().sendMessage(Message.raw("OrbisBuddy aktiviert."));
                 } else {
                     String requirement = initial ? "EnergyCore" : "Lost Core";
-                    context.sendMessage(Message.raw("Aktivierung fehlgeschlagen – du brauchst einen " + requirement + "."));
+                    context.sender().sendMessage(Message.raw("Aktivierung fehlgeschlagen – du brauchst einen " + requirement + "."));
                 }
             }
             default -> context.sendMessage(Message.raw("Usage: /golem status|follow|stay|assist|passive|activate"));
