@@ -4,9 +4,12 @@ import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.logger.HytaleLogger;
 import de.valcoms.orbisbuddy.config.ConfigService;
+import de.valcoms.orbisbuddy.controller.GolemControllerManager;
+
 import de.valcoms.orbisbuddy.ecs.ProximityComponents;
 import de.valcoms.orbisbuddy.ecs.ProximityTagComponent;
 import de.valcoms.orbisbuddy.ecs.ProximityTriggerSystem;
+
 import de.valcoms.orbisbuddy.persistence.JsonGolemSaveRepository;
 import de.valcoms.orbisbuddy.registry.CommandRegistry;
 import de.valcoms.orbisbuddy.registry.EntityRegistry;
@@ -33,6 +36,8 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
     private static ValcomsOrbisBuddyMod instance;
+    private GolemService golemService;
+    private GolemControllerManager controllerManager;
 
     public ValcomsOrbisBuddyMod(@Nonnull JavaPluginInit init) {
         super(init);
@@ -41,6 +46,10 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
 
     public static ValcomsOrbisBuddyMod getInstance() {
         return instance;
+    }
+
+    public GolemService getGolemService() {
+        return golemService;
     }
 
     @Override
@@ -54,27 +63,32 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
         var repo = new JsonGolemSaveRepository(dataDir);
         var store = new GolemInstanceStore();
         var inventory = new InventoryService();
-        var runtime = new DefaultGolemRuntimeAdapter(store);
-        var golemService = new GolemService(worldRef, repo, runtime, inventory, config.debugEnabled);
+        var runtime = new DefaultGolemRuntimeAdapter(store, repo, worldRef);
+
+        golemService = new GolemService(worldRef, repo, runtime, inventory, config.debugEnabled);
 
         ProximityComponents.PROXIMITY_TAG = getEntityStoreRegistry().registerComponent(
                 ProximityTagComponent.class,
                 "ProximityTag",
                 ProximityTagComponent.CODEC
         );
-        var proximitySystem = new ProximityTriggerSystem(store);
+        var proximitySystem = new ProximityTriggerSystem(store, golemService);
 
-        proximitySystem.setEnabled(false);
+        proximitySystem.setEnabled(true);
         getEntityStoreRegistry().registerSystem(proximitySystem);
+        System.out.println("[ValcomsOrbisBuddy] ProximitySystem enabled for auto-teleport");
         ItemRegistry.register();
         EntityRegistry.register(this);
         CommandRegistry.register(this, golemService, store, runtime, proximitySystem);
+
+        controllerManager = new GolemControllerManager(golemService, store);
+        getEntityStoreRegistry().registerSystem(controllerManager.createDamageBlockSystem());
+        System.out.println("[ValcomsOrbisBuddy] Registered DamageBlock (left-click) system");
 
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Registered commands: golem, bdebug");
 
         EventRegistry.register(getEventRegistry(), golemService, store);
 
-        // TODO(engine): expose services if needed for other engine hooks
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Setup complete!");
     }
 
@@ -86,6 +100,8 @@ public class ValcomsOrbisBuddyMod extends JavaPlugin {
     @Override
     protected void shutdown() {
         LOGGER.at(Level.INFO).log("[ValcomsOrbisBuddy] Shutting down...");
+        controllerManager = null;
+        golemService = null;
         instance = null;
     }
 }

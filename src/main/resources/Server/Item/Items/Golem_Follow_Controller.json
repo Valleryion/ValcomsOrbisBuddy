@@ -1,0 +1,9 @@
+{
+  "TranslationProperties": {
+    "Name": "server.items.Golem_Follow_Controller.name"
+  },
+  "Parent": "Template_Golem_Follow_Controller",
+  "Quality": "Common",
+  "MaxStack": 1,
+  "DropOnDeath": true
+}

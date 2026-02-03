@@ -105,7 +105,6 @@ public class GolemInstanceStore {
             ownerToEntity.remove(ownerId, entityRef);
             ownerToController.remove(ownerId);
             ownerToEntityRef.remove(ownerId);
-            ownerToPlayerRef.remove(ownerId);
             ownerToRoleKey.remove(ownerId);
         }
     }

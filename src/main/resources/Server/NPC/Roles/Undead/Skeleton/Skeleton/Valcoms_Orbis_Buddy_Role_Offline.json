@@ -1,0 +1,29 @@
+{
+  "Type": "Variant",
+  "Reference": "Valcoms_Orbis_Buddy_Template_Core_System",
+  "Modify": {
+    "Appearance": "Valcoms_Orbis_Buddy_Base_Model",
+    "MaxHealth": 1,
+    "MaxSpeed": 0.1,
+    "ViewRange": 0.1,
+    "HearingRange": 0.1,
+    "AlertedRange": 0.1,
+    "Weapons": [
+      "Weapon_Sword_Steel_Rusty"
+    ],
+    "DefaultHotbarSlot": 0,
+    "OffHand": [
+      "Weapon_Shield_Rusty"
+    ],
+    "DefaultOffHandSlot": -1,
+    "Attack": "Root_NPC_Skeleton_Knight_Attack",
+    "AttackDistance": 0.1,
+    "UseCombatActionEvaluator": false,
+    "CombatDirectWeight": 0,
+    "CombatStrafeWeight": 0,
+    "CombatAlwaysMovingWeight": 0,
+    "BlockProbability": 0,
+    "FlockArray": ["Valcoms_Orbis_Buddy_Role_Offline"],
+    "NameTranslationKey": "server.npcRoles.OrbisBuddy_Offline.name"
+  }
+}

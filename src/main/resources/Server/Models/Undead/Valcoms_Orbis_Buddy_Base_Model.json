@@ -1,0 +1,11 @@
+{
+  "Texture": "NPC/Undead/Skeleton/Models/Model_Textures/Buddy_Golem_Texture.png",
+  "EyeHeight": 1.5,
+  "Particles": [
+    {
+      "SystemId": "Praetorian_Summon_Spawn"
+    }
+  ],
+  "Model": "NPC/Undead/Skeleton/Models/OrbisBuddy.blockymodel",
+  "Parent": "Valcoms_Orbis_Buddy_Parent_Model"
+}

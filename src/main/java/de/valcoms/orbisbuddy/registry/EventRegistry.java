@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.Entity;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.event.events.entity.EntityRemoveEvent;
+import com.hypixel.hytale.server.core.event.events.player.AddPlayerToWorldEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerChatEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -41,6 +42,29 @@ public class EventRegistry {
 
         LOGGER.atInfo().log("[ValcomsOrbisBuddy] Registering event listeners...");
         System.out.println("[ValcomsOrbisBuddy] Registering event listeners (stdout)...");
+
+        events.registerGlobal(AddPlayerToWorldEvent.class, event -> {
+            try {
+                PlayerRef playerRef = event.getHolder().getComponent(PlayerRef.getComponentType());
+                if (playerRef == null || playerRef.getUuid() == null) {
+                    return;
+                }
+
+                String ownerId = playerRef.getUuid().toString();
+                Ref<EntityStore> playerEntityRef = playerRef.getReference();
+                if (playerEntityRef != null) {
+                    store.setPlayerRef(ownerId, playerEntityRef);
+                }
+
+                var data = golemService.loadOrCreate(ownerId);
+                if (data.getState() != de.valcoms.orbisbuddy.model.GolemState.OFFLINE) {
+                    System.out.println("[ValcomsOrbisBuddy] Player " + ownerId + " joined with active buddy, spawning...");
+                    golemService.tryActivate(playerEntityRef, ownerId, false);
+                }
+            } catch (Throwable t) {
+                LOGGER.atWarning().log("[ValcomsOrbisBuddy] Failed to auto-spawn buddy on join: " + t.getMessage());
+            }
+        });
 
         events.registerGlobal(PlayerChatEvent.class, event -> {
             String rawMessage = event.getContent();
@@ -87,7 +111,24 @@ public class EventRegistry {
         events.registerGlobal(PlayerDisconnectEvent.class, event -> {
             PlayerRef playerRef = event.getPlayerRef();
             if (playerRef != null && playerRef.getUuid() != null) {
-                store.removeByOwner(playerRef.getUuid().toString());
+                String ownerId = playerRef.getUuid().toString();
+
+                Ref<EntityStore> buddyRef = store.getEntityRef(ownerId);
+                if (buddyRef != null && buddyRef.isValid()) {
+                    try {
+                        EntityStore entityStore = buddyRef.getStore().getExternalData();
+                        World world = entityStore.getWorld();
+                        if (world != null) {
+                            world.execute(() -> despawnBuddyAndSaveHealth(ownerId, buddyRef, golemService, entityStore));
+                        } else {
+                            despawnBuddyAndSaveHealth(ownerId, buddyRef, golemService, entityStore);
+                        }
+                    } catch (Throwable t) {
+                        LOGGER.atWarning().log("[ValcomsOrbisBuddy] Failed to despawn buddy on disconnect: " + t.getMessage());
+                    }
+                }
+
+                store.removeByOwner(ownerId);
             }
         });
 
@@ -175,5 +216,51 @@ public class EventRegistry {
             }
         });
         return found[0];
+    }
+
+    private static void despawnBuddyAndSaveHealth(String ownerId, Ref<EntityStore> buddyRef, GolemService golemService, EntityStore entityStore) {
+        try {
+            Float health = readBuddyHealth(entityStore.getStore(), buddyRef);
+            if (health != null && health > 0) {
+                golemService.saveHealth(ownerId, health);
+                System.out.println("[ValcomsOrbisBuddy] Saved buddy health=" + health + " for owner=" + ownerId);
+            }
+        } catch (Throwable t) {
+            LOGGER.atWarning().log("[ValcomsOrbisBuddy] Failed to save health: " + t.getMessage());
+        }
+
+        try {
+            Entity entity = com.hypixel.hytale.server.core.entity.EntityUtils.getEntity(buddyRef, entityStore.getStore());
+            if (entity != null) {
+                entity.remove();
+                System.out.println("[ValcomsOrbisBuddy] Despawned buddy for owner=" + ownerId);
+            }
+        } catch (Throwable t) {
+            LOGGER.atWarning().log("[ValcomsOrbisBuddy] Failed to despawn buddy: " + t.getMessage());
+        }
+    }
+
+    private static Float readBuddyHealth(com.hypixel.hytale.component.Store<EntityStore> store, Ref<EntityStore> ref) {
+        try {
+            Class<?> statMapClass = Class.forName("com.hypixel.hytale.server.core.modules.entity.stats.EntityStatMap");
+            Object componentTypeObj = statMapClass.getMethod("getComponentType").invoke(null);
+            Object statMap = store.getComponent(ref, (com.hypixel.hytale.component.ComponentType<EntityStore, ?>) componentTypeObj);
+
+            if (statMap != null) {
+                Class<?> statTypesClass = Class.forName("com.hypixel.hytale.server.core.modules.entity.stats.DefaultEntityStatTypes");
+                Object healthIndexObj = statTypesClass.getMethod("getHealth").invoke(null);
+                int healthIndex = ((Number) healthIndexObj).intValue();
+
+                Object statValue = statMap.getClass().getMethod("get", int.class).invoke(statMap, healthIndex);
+                if (statValue != null) {
+                    Object value = statValue.getClass().getMethod("get").invoke(statValue);
+                    if (value instanceof Number number) {
+                        return number.floatValue();
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 }

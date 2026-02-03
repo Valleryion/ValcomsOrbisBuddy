@@ -15,6 +15,7 @@ import com.hypixel.hytale.server.core.entity.EntityUtils;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import de.valcoms.orbisbuddy.service.GolemInstanceStore;
+import de.valcoms.orbisbuddy.service.GolemService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,15 +29,25 @@ public class ProximityTriggerSystem extends TickingSystem<EntityStore> {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
+    private static final double TELEPORT_DISTANCE_THRESHOLD = 40.0;
+    private static final long TELEPORT_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5);
+    private static final long HEALTH_SAVE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(2);
+    private static final long PROXIMITY_LOG_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1);
+    private static final float MIN_HEALTH_CHANGE = 0.05f;
+
     private final GolemInstanceStore instanceStore;
+    private final GolemService golemService;
     private final Query<EntityStore> query;
-    private final ConcurrentHashMap<String, Long> lastAttemptNanosByOwner = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastProximityLog = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastTeleport = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastHealthSave = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Float> lastPersistedHealth = new ConcurrentHashMap<>();
     private volatile boolean enabled;
 
-    public ProximityTriggerSystem(GolemInstanceStore instanceStore) {
+    public ProximityTriggerSystem(GolemInstanceStore instanceStore, GolemService golemService) {
         this.instanceStore = Objects.requireNonNull(instanceStore, "instanceStore");
+        this.golemService = Objects.requireNonNull(golemService, "golemService");
         this.query = Query.and(TransformComponent.getComponentType(), ProximityComponents.PROXIMITY_TAG);
-        this.enabled = false;
     }
 
     public void setEnabled(boolean enabled) {
@@ -50,62 +61,149 @@ public class ProximityTriggerSystem extends TickingSystem<EntityStore> {
     @Override
     @SuppressWarnings("deprecation")
     public void tick(float dt, int systemIndex, Store<EntityStore> store) {
-        if (!enabled) {
-            return;
-        }
-
-        List<TaggedSnapshot> snapshots = new ArrayList<>();
-
-        store.forEachChunk(query,
-                (BiConsumer<ArchetypeChunk<EntityStore>, CommandBuffer<EntityStore>>) (chunk, buffer) ->
-                        collectSnapshots(chunk, snapshots));
-
-        for (TaggedSnapshot buddy : snapshots) {
-            if (!buddy.tag.isBuddy()) {
-                continue;
-            }
-            String ownerId = buddy.tag.getOwnerId();
-            if (ownerId == null || ownerId.isBlank()) {
-                continue;
-            }
-
-            Ref<EntityStore> playerRef = instanceStore.getPlayerRef(ownerId);
-            if (playerRef == null || !playerRef.isValid()) {
-                continue;
-            }
-
-            TransformComponent playerTransform = safeGetTransform(store, playerRef);
-            if (playerTransform == null) {
-                continue;
-            }
-
-            double dist = buddy.pos.distanceTo(playerTransform.getPosition());
-            if (dist > buddy.tag.getRange()) {
-                continue;
-            }
-
-            if (!shouldAttemptActivation(ownerId)) {
-                continue;
-            }
-
-            LOGGER.at(Level.INFO)
-                    .atMostEvery(1, TimeUnit.SECONDS)
-                    .log("[ValcomsOrbisBuddy] Proximity owner=" + ownerId
-                            + " buddyNetworkId=" + buddy.networkId
-                            + " activatorRef=" + playerRef
-                            + " dist=" + dist);
+        List<TaggedSnapshot> buddies = collectBuddySnapshots(store);
+        for (TaggedSnapshot snapshot : buddies) {
+            processSnapshot(store, snapshot);
         }
     }
 
-    private boolean shouldAttemptActivation(String ownerId) {
+    private List<TaggedSnapshot> collectBuddySnapshots(Store<EntityStore> store) {
+        List<TaggedSnapshot> snapshots = new ArrayList<>();
+        store.forEachChunk(query,
+                (BiConsumer<ArchetypeChunk<EntityStore>, CommandBuffer<EntityStore>>) (chunk, buffer) ->
+                        collectSnapshots(chunk, snapshots));
+        return snapshots;
+    }
+
+    private void processSnapshot(Store<EntityStore> store, TaggedSnapshot buddy) {
+        if (!buddy.tag.isBuddy()) {
+            return;
+        }
+
+        String ownerId = buddy.tag.getOwnerId();
+        if (ownerId == null || ownerId.isBlank()) {
+            return;
+        }
+
+        Ref<EntityStore> playerRef = instanceStore.getPlayerRef(ownerId);
+        if (playerRef == null || !playerRef.isValid()) {
+            return;
+        }
+
+        TransformComponent playerTransform = safeGetTransform(store, playerRef);
+        if (playerTransform == null) {
+            return;
+        }
+
+        saveBuddyHealthIfNeeded(store, buddy.ref(), ownerId);
+
+        Vector3d playerPos = playerTransform.getPosition().clone();
+        double distance = buddy.position.distanceTo(playerPos);
+
+        if (distance > TELEPORT_DISTANCE_THRESHOLD) {
+            handleTeleport(store, buddy, ownerId, playerPos, distance);
+            return;
+        }
+
+        if (!enabled || distance > buddy.tag.getRange()) {
+            return;
+        }
+
+        handleProximityLog(ownerId, buddy, playerRef, distance);
+    }
+
+    private void handleTeleport(Store<EntityStore> store,
+                                TaggedSnapshot buddy,
+                                String ownerId,
+                                Vector3d playerPos,
+                                double distance) {
+        if (!shouldTeleport(ownerId)) {
+            return;
+        }
+
+        TransformComponent buddyTransform = safeGetTransform(store, buddy.ref());
+        if (buddyTransform == null) {
+            return;
+        }
+
+        Vector3d target = playerPos.clone().add(1.0, 0.0, 1.0);
+        buddyTransform.teleportPosition(target);
+        LOGGER.at(Level.INFO)
+                .log(String.format(
+                        "[ValcomsOrbisBuddy] Auto-teleport owner=%s buddyNetworkId=%d dist=%.2f target=%.2f/%.2f/%.2f",
+                        ownerId,
+                        buddy.networkId,
+                        distance,
+                        target.getX(),
+                        target.getY(),
+                        target.getZ()));
+    }
+
+    private void handleProximityLog(String ownerId,
+                                    TaggedSnapshot buddy,
+                                    Ref<EntityStore> playerRef,
+                                    double distance) {
+        if (!shouldLogProximity(ownerId)) {
+            return;
+        }
+        LOGGER.at(Level.INFO)
+                .atMostEvery(1, TimeUnit.SECONDS)
+                .log("[ValcomsOrbisBuddy] Proximity owner=" + ownerId
+                        + " buddyNetworkId=" + buddy.networkId
+                        + " activatorRef=" + playerRef
+                        + " dist=" + distance);
+    }
+
+    private boolean shouldLogProximity(String ownerId) {
         long now = System.nanoTime();
-        long minDelta = TimeUnit.SECONDS.toNanos(1);
-        Long last = lastAttemptNanosByOwner.get(ownerId);
-        if (last != null && now - last < minDelta) {
+        Long last = lastProximityLog.get(ownerId);
+        if (last != null && now - last < PROXIMITY_LOG_INTERVAL_NANOS) {
             return false;
         }
-        lastAttemptNanosByOwner.put(ownerId, now);
+        lastProximityLog.put(ownerId, now);
         return true;
+    }
+
+    private boolean shouldTeleport(String ownerId) {
+        long now = System.nanoTime();
+        Long last = lastTeleport.get(ownerId);
+        if (last != null && now - last < TELEPORT_INTERVAL_NANOS) {
+            return false;
+        }
+        lastTeleport.put(ownerId, now);
+        return true;
+    }
+
+    private void saveBuddyHealthIfNeeded(Store<EntityStore> store, Ref<EntityStore> buddyRef, String ownerId) {
+        long now = System.nanoTime();
+        Long lastSave = lastHealthSave.get(ownerId);
+        if (lastSave != null && now - lastSave < HEALTH_SAVE_INTERVAL_NANOS) {
+            return;
+        }
+
+        Float health = readHealth(store, buddyRef);
+        if (health == null) {
+            return;
+        }
+
+        Float previous = lastPersistedHealth.get(ownerId);
+        if (previous != null && Math.abs(previous - health) < MIN_HEALTH_CHANGE) {
+            return;
+        }
+
+        lastHealthSave.put(ownerId, now);
+        lastPersistedHealth.put(ownerId, health);
+
+        try {
+            if (health > 0.0f) {
+                golemService.saveHealth(ownerId, health);
+            } else {
+                golemService.handleDowned(ownerId);
+            }
+        } catch (Exception ex) {
+            LOGGER.at(Level.WARNING)
+                    .log("[ValcomsOrbisBuddy] Failed to persist buddy health for owner=" + ownerId + ": " + ex.getMessage());
+        }
     }
 
     private void collectSnapshots(ArchetypeChunk<EntityStore> chunk, List<TaggedSnapshot> out) {
@@ -170,11 +268,108 @@ public class ProximityTriggerSystem extends TickingSystem<EntityStore> {
             return store.getComponent(ref, TransformComponent.getComponentType());
         } catch (IndexOutOfBoundsException ex) {
             LOGGER.at(Level.FINE)
-                    .log("[ValcomsOrbisBuddy] Skipping player transform due to concurrent mutation: " + ex.getMessage());
+                    .log("[ValcomsOrbisBuddy] Skipping transform due to concurrent mutation: " + ex.getMessage());
             return null;
         }
     }
 
-    private record TaggedSnapshot(Ref<EntityStore> ref, ProximityTagComponent tag, Vector3d pos, int networkId) {
+    private Float readHealth(Store<EntityStore> store, Ref<EntityStore> ref) {
+        Object statMap = getStatMap(store, ref);
+        if (statMap == null) {
+            return null;
+        }
+        Integer healthIndex = getHealthIndex();
+        if (healthIndex == null) {
+            return null;
+        }
+        return readStatValue(statMap, healthIndex);
+    }
+
+    private Float readStatValue(Object statMap, int index) {
+        Object statValue = readRawStatValue(statMap, index);
+        if (statValue == null) {
+            return null;
+        }
+        if (statValue instanceof Number number) {
+            return number.floatValue();
+        }
+        try {
+            Object value = statValue.getClass().getMethod("get").invoke(statValue);
+            if (value instanceof Number number) {
+                return number.floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object value = statValue.getClass().getMethod("getValue").invoke(statValue);
+            if (value instanceof Number number) {
+                return number.floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Object readRawStatValue(Object statMap, int index) {
+        try {
+            return statMap.getClass().getMethod("get", int.class).invoke(statMap, index);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return statMap.getClass().getMethod("getStatValue", int.class).invoke(statMap, index);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Object getStatMap(Store<EntityStore> store, Ref<EntityStore> ref) {
+        Class<?> statMapClass = loadClass(
+                "com.hypixel.hytale.server.core.modules.entity.stats.EntityStatMap",
+                "com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap",
+                "com.hypixel.hytale.server.core.entity.stats.EntityStatMap"
+        );
+        if (statMapClass == null) {
+            return null;
+        }
+        try {
+            Object componentTypeObj = statMapClass.getMethod("getComponentType").invoke(null);
+            @SuppressWarnings("unchecked")
+            ComponentType<EntityStore, ?> componentType = (ComponentType<EntityStore, ?>) componentTypeObj;
+            return store.getComponent(ref, componentType);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Integer getHealthIndex() {
+        Class<?> statTypesClass = loadClass(
+                "com.hypixel.hytale.server.core.modules.entity.stats.DefaultEntityStatTypes",
+                "com.hypixel.hytale.server.core.modules.entitystats.DefaultEntityStatTypes",
+                "com.hypixel.hytale.server.core.entity.stats.DefaultEntityStatTypes"
+        );
+        if (statTypesClass == null) {
+            return null;
+        }
+        try {
+            Object value = statTypesClass.getMethod("getHealth").invoke(null);
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Class<?> loadClass(String... names) {
+        for (String name : names) {
+            try {
+                return Class.forName(name);
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private record TaggedSnapshot(Ref<EntityStore> ref, ProximityTagComponent tag, Vector3d position, int networkId) {
     }
 }

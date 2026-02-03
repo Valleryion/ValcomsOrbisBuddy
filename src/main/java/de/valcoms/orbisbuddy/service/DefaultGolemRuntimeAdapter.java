@@ -8,6 +8,7 @@ import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.server.core.entity.Entity;
 import com.hypixel.hytale.server.core.entity.EntityUtils;
+import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -20,6 +21,7 @@ import de.valcoms.orbisbuddy.model.CombatMode;
 import de.valcoms.orbisbuddy.model.FollowMode;
 import de.valcoms.orbisbuddy.model.GolemData;
 import de.valcoms.orbisbuddy.model.GolemState;
+import de.valcoms.orbisbuddy.persistence.GolemSaveRepository;
 
 import java.util.Objects;
 import java.util.logging.Level;
@@ -29,9 +31,13 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
     private final GolemInstanceStore instanceStore;
+    private final GolemSaveRepository repo;
+    private final Object worldRef;
 
-    public DefaultGolemRuntimeAdapter(GolemInstanceStore store) {
+    public DefaultGolemRuntimeAdapter(GolemInstanceStore store, GolemSaveRepository repo, Object worldRef) {
         this.instanceStore = Objects.requireNonNull(store, "store");
+        this.repo = Objects.requireNonNull(repo, "repo");
+        this.worldRef = worldRef;
     }
 
     @Override
@@ -93,7 +99,17 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
         Float previousHealth = null;
         if (buddyRef != null && buddyRef.isValid()) {
             previousHealth = readHealth(store, buddyRef);
+            if (previousHealth != null && previousHealth > 0) {
+                data.setHealth(previousHealth);
+                persistData(ownerId, data);
+                System.out.println("[ValcomsOrbisBuddy] Read HP=" + previousHealth + " from old buddy, saving to data");
+            }
             tryRemoveEntity(store, buddyRef);
+        }
+
+        if (previousHealth == null && data.getHealth() > 0) {
+            previousHealth = data.getHealth();
+            System.out.println("[ValcomsOrbisBuddy] Using saved HP=" + previousHealth + " from data");
         }
 
         Ref<EntityStore> newRef = spawnNpc(store, desiredRoleKey, position, rotation);
@@ -114,11 +130,8 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
 
         try {
             store.addComponent(newRef, ProximityComponents.PROXIMITY_TAG, new ProximityTagComponent(ownerId, true, 4.0f));
+            store.addComponent(newRef, Nameplate.getComponentType(), new Nameplate(" OrbisBuddy"));
         } catch (Throwable ignored) {
-        }
-
-        if (previousHealth != null) {
-            applyHealth(store, newRef, previousHealth);
         }
 
         LOGGER.atInfo().log("[ValcomsOrbisBuddy] Applied role owner=" + ownerId
@@ -126,6 +139,20 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
                 + " networkId=" + entity.getNetworkId());
 
         newController.applyState(data);
+
+        if (previousHealth != null) {
+            final float healthToApply = previousHealth;
+            System.out.println("[ValcomsOrbisBuddy] Applying HP: " + healthToApply);
+            applyHealth(store, newRef, healthToApply);
+            System.out.println("[ValcomsOrbisBuddy] Applied HP=" + healthToApply + " to new buddy");
+        }
+    }
+
+    private void persistData(String ownerId, GolemData data) {
+        try {
+            repo.save(worldRef, ownerId, data);
+        } catch (Throwable ignored) {
+        }
     }
 
     private String resolveRoleKey(GolemData data) {
@@ -251,18 +278,7 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
         if (healthIndex == null) {
             return null;
         }
-        try {
-            Object statValue = statMap.getClass().getMethod("get", int.class).invoke(statMap, healthIndex);
-            if (statValue == null) {
-                return null;
-            }
-            Object value = statValue.getClass().getMethod("get").invoke(statValue);
-            if (value instanceof Number number) {
-                return number.floatValue();
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
+        return readStatValue(statMap, healthIndex);
     }
 
     private void applyHealth(Store<EntityStore> store, Ref<EntityStore> ref, float value) {
@@ -274,8 +290,114 @@ public class DefaultGolemRuntimeAdapter implements GolemRuntimeAdapter {
         if (healthIndex == null) {
             return;
         }
+        if (applyStatValue(statMap, healthIndex, value)) {
+            return;
+        }
+        Object statValue = readRawStatValue(statMap, healthIndex);
+        if (statValue != null) {
+            applyStatObjectValue(statValue, value);
+        }
+    }
+
+    private Float readStatValue(Object statMap, int index) {
+        Object statValue = readRawStatValue(statMap, index);
+        if (statValue == null) {
+            return null;
+        }
+        if (statValue instanceof Number number) {
+            return number.floatValue();
+        }
         try {
-            statMap.getClass().getMethod("setStatValue", int.class, float.class).invoke(statMap, healthIndex, value);
+            Object value = statValue.getClass().getMethod("get").invoke(statValue);
+            if (value instanceof Number number) {
+                return number.floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object value = statValue.getClass().getMethod("getValue").invoke(statValue);
+            if (value instanceof Number number) {
+                return number.floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Object readRawStatValue(Object statMap, int index) {
+        try {
+            return statMap.getClass().getMethod("get", int.class).invoke(statMap, index);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return statMap.getClass().getMethod("getStatValue", int.class).invoke(statMap, index);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private boolean applyStatValue(Object statMap, int index, float value) {
+        try {
+            statMap.getClass().getMethod("setStatValue", int.class, float.class).invoke(statMap, index, value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statMap.getClass().getMethod("setStatValue", int.class, double.class).invoke(statMap, index, (double) value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statMap.getClass().getMethod("setStatValue", int.class, int.class).invoke(statMap, index, (int) value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statMap.getClass().getMethod("set", int.class, float.class).invoke(statMap, index, value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statMap.getClass().getMethod("set", int.class, double.class).invoke(statMap, index, (double) value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statMap.getClass().getMethod("set", int.class, int.class).invoke(statMap, index, (int) value);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private void applyStatObjectValue(Object statValue, float value) {
+        try {
+            statValue.getClass().getMethod("set", float.class).invoke(statValue, value);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statValue.getClass().getMethod("set", double.class).invoke(statValue, (double) value);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statValue.getClass().getMethod("set", int.class).invoke(statValue, (int) value);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statValue.getClass().getMethod("setValue", float.class).invoke(statValue, value);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statValue.getClass().getMethod("setValue", double.class).invoke(statValue, (double) value);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            statValue.getClass().getMethod("setValue", int.class).invoke(statValue, (int) value);
         } catch (Throwable ignored) {
         }
     }

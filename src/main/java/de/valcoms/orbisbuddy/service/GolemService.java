@@ -66,6 +66,40 @@ public class GolemService {
         runtime.applyState(ownerId, data);
     }
 
+    public CombatMode toggleCombatMode(String ownerId) {
+        var data = loadOrCreate(ownerId);
+        CombatMode current = data.getSettings().getCombatMode();
+        CombatMode next = current == CombatMode.ASSIST ? CombatMode.PASSIVE : CombatMode.ASSIST;
+        data.getSettings().setCombatMode(next);
+        repo.save(worldRef, ownerId, data);
+        runtime.applyState(ownerId, data);
+        return next;
+    }
+
+    public FollowMode toggleFollowMode(String ownerId) {
+        var data = loadOrCreate(ownerId);
+        FollowMode current = data.getSettings().getFollowMode();
+        FollowMode next = current == FollowMode.FOLLOW ? FollowMode.STAY : FollowMode.FOLLOW;
+        data.getSettings().setFollowMode(next);
+        repo.save(worldRef, ownerId, data);
+        runtime.applyState(ownerId, data);
+        return next;
+    }
+
+    public CombatMode getCurrentCombatMode(String ownerId) {
+        return loadOrCreate(ownerId).getSettings().getCombatMode();
+    }
+
+    public FollowMode getCurrentFollowMode(String ownerId) {
+        return loadOrCreate(ownerId).getSettings().getFollowMode();
+    }
+
+    public void saveHealth(String ownerId, float health) {
+        var data = loadOrCreate(ownerId);
+        data.setHealth(health);
+        repo.save(worldRef, ownerId, data);
+    }
+
     public void handleDowned(String ownerId) {
         var data = loadOrCreate(ownerId);
         data.setState(GolemState.OFFLINE);

@@ -1,0 +1,36 @@
+{
+  "Type": "Variant",
+  "Reference": "Valcoms_Orbis_Buddy_Template_Core_System",
+  "Modify": {
+    "Appearance": "Valcoms_Orbis_Buddy_Base_Model",
+    "MaxHealth": 100,
+    "MaxSpeed": 0.5,
+    "ViewRange": 25,
+    "ViewSector": 360,
+    "HearingRange": 15,
+    "AlertedRange": 40,
+    "Weapons": [
+      "Weapon_Sword_Steel_Rusty"
+    ],
+    "DefaultHotbarSlot": 0,
+    "OffHand": [
+      "Weapon_Shield_Rusty"
+    ],
+    "DefaultOffHandSlot": 0,
+    "Attack": "Root_NPC_Skeleton_Knight_Attack",
+    "AttackDistance": 4,
+    "AttackPauseRange": [1, 1.5],
+    "CombatAttackPreDelay": [0.1, 0.3],
+    "CombatAttackPostDelay": [0.2, 0.2],
+    "DesiredAttackDistanceRange": [1, 2],
+    "CombatBackOffAfterAttack": true,
+    "CombatBackOffDurationRange": [2, 3],
+    "CombatBackOffDistanceRange": [4, 4],
+    "CombatDirectWeight": 10,
+    "CombatStrafeWeight": 15,
+    "CombatAlwaysMovingWeight": 0,
+    "BlockProbability": 50,
+    "FlockArray": ["Valcoms_Orbis_Buddy_Role_Stay_Assist"],
+    "NameTranslationKey": "server.npcRoles.OrbisBuddy_Stay_Assist.name"
+  }
+}

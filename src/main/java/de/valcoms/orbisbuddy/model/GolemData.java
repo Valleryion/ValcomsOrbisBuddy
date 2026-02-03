@@ -5,7 +5,13 @@ public class GolemData {
     private GolemState state = GolemState.OFFLINE;
     private GolemSettings settings = new GolemSettings();
 
-    private double x, y, z;
+    private double x;
+    private double y;
+    private double z;
+    private float health = -1.0f;
+
+    public GolemData() {
+    }
 
     public GolemData(String ownerId) {
         this.ownerId = ownerId;
@@ -53,4 +59,11 @@ public class GolemData {
         return z;
     }
 
+    public float getHealth() {
+        return health;
+    }
+
+    public void setHealth(float health) {
+        this.health = health;
+    }
 }
